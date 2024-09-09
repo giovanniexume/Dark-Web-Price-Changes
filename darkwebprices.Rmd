@@ -1,0 +1,129 @@
+---
+title: "darkwebprices"
+output: html_document
+date: "2024-08-27"
+---
+
+
+```{r}
+library(pacman)
+p_load('tidyverse', 'tidyr', 'stats', 'janitor', 'broom', 'spotifyr', 'httr', 'httpuv', 'lubridate', 'foreign', 'data.table', 'readxl', 'openxlsx', 'scales', 'googlesheets4', 'writexl', 'fedmatch', 'fuzzyjoin', 'RecordLinkage', 'stringdist', 'readr', 'dplyr', 'utils', 'miniUI', 'shiny', 'openai', 'lintr', 'datapasta', 'styler', 'reprex', 'remotes', 'dtplyr', 'purrr', 'fs', 'plotly', 'SKTools', 'scales', 'psych', 'shinyFiles', 'XML')
+
+```
+
+# Importing and Cleaning
+
+```{r}
+darkweb_2021 <- readLines("https://www.privacyaffairs.com/dark-web-price-index-2021/") %>%
+  readHTMLTable(., header = T, which = 1, stringsAsFactors = FALSE) %>% #read in weblink and select the first table
+  clean_names() %>% #clean up the names
+  rename(avg_dark_web_price_usd_2021 = avg_dark_web_price_usd) %>%
+  mutate(category = na_if(x = category, y = "")) #turn all the blanks in the category column to NA
+
+
+darkweb_2021 <- darkweb_2021 %>% mutate(avg_dark_web_price_usd_2021 = as.numeric(gsub("[^0-9.]", "", avg_dark_web_price_usd_2021))) #removing all non-numeric characters from price column and turning into numeric column
+
+darkweb_2021 <- darkweb_2021[-48, ] #remove row 48, it was completely blank 
+
+darkweb_2021 <- darkweb_2021 %>% distinct(category, product, avg_dark_web_price_usd_2021, .keep_all = TRUE) #remove duplicates
+
+darkweb_2021 <- darkweb_2021 %>% fill(category, .direction = "down") #fill in all categories
+```
+
+
+
+
+
+```{r}
+n_distinct(darkweb_2021$category)
+unique(darkweb_2021$category)
+```
+
+
+```{r}
+
+darkweb_2023 <- readLines("https://www.privacyaffairs.com/dark-web-price-index-2023/") %>%
+  readHTMLTable(., header = T, which = 1, stringsAsFactors = FALSE) %>% #read in weblink and select the first table
+  clean_names() %>% #clean up the names
+  rename(avg_dark_web_price_usd_2023 = avg_dark_web_price_usd) %>%
+  mutate(category = na_if(x = category, y = "")) #turn all the blanks in the category column to NA
+
+
+darkweb_2023 <- darkweb_2023 %>% mutate(avg_dark_web_price_usd_2023 = as.numeric(gsub("[^0-9.]", "", avg_dark_web_price_usd_2023))) #removing all non-numeric characters from price column and turning into numeric column
+
+darkweb_2023 <- darkweb_2023 %>% distinct(category, product, avg_dark_web_price_usd_2023, .keep_all = TRUE) #remove duplicates
+
+darkweb_2023 <- darkweb_2023 %>% fill(category, .direction = "down") #fill in all categories
+
+
+```
+
+
+```{r}
+n_distinct(darkweb_2023$category)
+unique(darkweb_2023$category)
+```
+
+
+# Merging Yearly Datasets and Exploring
+
+```{r}
+#joining 2021 and 2023 datasets
+
+j1 <- right_join(darkweb_2021, darkweb_2023, join_by("category", "product"))
+```
+
+
+
+```{r}
+#percent change by product
+
+price_change_by_product <- j1 %>%
+  group_by(product) %>%
+  summarise(avg_2021 = round(mean(avg_dark_web_price_usd_2021, na.rm = T), 2), 
+            avg_2023 = round(mean(avg_dark_web_price_usd_2023), 2), 
+            pct_change = round(((avg_dark_web_price_usd_2023 - avg_dark_web_price_usd_2021)/avg_dark_web_price_usd_2021) * 100)) %>%
+  arrange(desc(avg_2021))
+
+```
+
+
+
+
+
+```{r}
+#average price percent change per category
+
+unfiltered_price_change_by_category <- j1 %>%
+  group_by(category) %>%
+  summarise(avg_2021 = round(mean(avg_dark_web_price_usd_2021, na.rm = T), 2), 
+            avg_2023 = round(mean(avg_dark_web_price_usd_2023), 2), 
+            pct_change = round(((avg_2023 - avg_2021)/avg_2021) * 100)) %>%
+  arrange(desc(avg_2021))
+
+
+
+#filtering out new 2023 products that weren't included in 2021 list
+
+filtered_price_change_by_category <- j1 %>%
+  filter(!is.na(avg_dark_web_price_usd_2021)) %>%
+  group_by(category) %>%
+  summarise(avg_2021 = round(mean(avg_dark_web_price_usd_2021, na.rm = T), 2), 
+            avg_2023 = round(mean(avg_dark_web_price_usd_2023), 2), 
+            pct_change = round(((avg_2023 - avg_2021)/avg_2021) * 100)) %>%
+  arrange(desc(avg_2021))
+
+
+#since this is focused on comparing price changes, I'm going to use the list that excludes new 2023 products
+```
+
+
+
+
+```{r}
+#exporting to excel
+write_xlsx(list("Filtered Price Change" = filtered_price_change_by_category, "Unfiltered Price Change" = unfiltered_price_change_by_category, "Product Price Change" = price_change_by_product, "Joined Data" = j1, "2021 Index" = darkweb_2021, "2023 Index" = darkweb_2023), "Dark Web Price Change 2021 - 2023.xlsx", format_headers = T)
+```
+
+
+
